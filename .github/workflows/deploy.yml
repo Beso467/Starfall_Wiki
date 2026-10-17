@@ -1,0 +1,58 @@
+name: Sync Vault and Deploy
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Checkout Starfall_Universe (vault)
+        uses: actions/checkout@v6
+        with:
+          repository: amr467/Starfall_Universe
+          token: ${{ secrets.VAULT_ACCESS_TOKEN }}
+          ref: main
+          path: vault-temp
+
+      - name: Copy vault into content/
+        run: |
+          rsync -a --delete --exclude='.git' --exclude='.obsidian' vault-temp/ content/
+          rm -rf vault-temp
+          [ -f content/index.md ] || printf -- '---\ntitle: The Starfall Universe\n---\nWelcome.\n' > content/index.md
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npx quartz plugin install
+      - run: npx quartz build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
